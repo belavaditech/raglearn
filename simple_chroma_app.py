@@ -52,7 +52,7 @@ except Exception as e:
 
 
 # Helper function to call OpenAI
-def call_openai_api(prompt: str, system_message: str = "", api_key: str = "", model: str = "gpt-4o-mini") -> str:
+def call_openai_api(prompt: str, system_message: str = "", api_key: str = "", model: str = "gpt-4o-mini", temperature: float = 0.2) -> str:
     from openai import OpenAI
     client = OpenAI(api_key=api_key)
     messages = []
@@ -63,7 +63,7 @@ def call_openai_api(prompt: str, system_message: str = "", api_key: str = "", mo
     response = client.chat.completions.create(
         model=model,
         messages=messages,
-        temperature=0.2
+        temperature=temperature
     )
     return response.choices[0].message.content
 
@@ -97,12 +97,13 @@ with st.sidebar:
         "Display Mode:",
         options=[
             "⚖️ OpenAI Compare: With RAG vs. Without RAG",
+            "🌡️ Temperature Impact Lab: T=0.0 (Factual) vs. T=1.2 (Creative)",
             "Synthesized Answer Grounded on Vector Data (Local)",
             "Direct Matched Document Evidence",
             "Compare Side-by-Side (Strict vs Flexible)"
         ],
         index=0,
-        help="Choose 'OpenAI Compare' to see how the same query is answered by OpenAI with and without vector data retrieved from ChromaDB."
+        help="Choose 'OpenAI Compare' to see With-RAG vs Without-RAG, or 'Temperature Impact Lab' to see how Temperature alters generation."
     )
 
     show_vector_outputs = st.checkbox(
@@ -140,6 +141,15 @@ with st.sidebar:
             st.info("💡 No key set. A simulated comparison is displayed until a key is added.")
 
     openai_model = st.selectbox("OpenAI Model:", options=["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"], index=0)
+
+    openai_temperature = st.slider(
+        "Temperature (Randomness / Creativity):",
+        min_value=0.0,
+        max_value=1.5,
+        value=0.2,
+        step=0.1,
+        help="0.0 = Deterministic & strictly factual (Recommended for RAG).\n1.0+ = Creative & exploratory (Higher risk of hallucination/drift)."
+    )
 
     st.divider()
     if st.button("🗑️ Reset Collection to Sample Data", use_container_width=True):
@@ -264,10 +274,10 @@ if query_input.strip():
     st.markdown("### 🎯 Result Based on Vector Data Found")
 
     # -------------------------------------------------------------
-    # FEATURE: OpenAI Comparison (With RAG vs Without RAG)
+    # FEATURE 1: OpenAI Comparison (With RAG vs Without RAG)
     # -------------------------------------------------------------
     if result_display_mode == "⚖️ OpenAI Compare: With RAG vs. Without RAG":
-        st.write("Compare the exact same query evaluated by **OpenAI Without RAG** vs. **OpenAI With ChromaDB RAG**:")
+        st.write(f"Compare the exact same query evaluated by **OpenAI Without RAG** vs. **OpenAI With ChromaDB RAG** at Temperature `{openai_temperature}`:")
 
         # Build context string from vector search
         valid_indices = passing_indices if rag_mode == "Strict" else list(range(len(matched_docs)))
@@ -277,7 +287,7 @@ if query_input.strip():
 
         # --- LEFT COLUMN: OpenAI WITHOUT RAG ---
         with col_no_rag:
-            st.markdown("#### 🤖 OpenAI Query (WITHOUT RAG)")
+            st.markdown(f"#### 🤖 OpenAI Query (WITHOUT RAG) [T={openai_temperature}]")
             st.caption("Prompt sent directly to OpenAI with zero vector context.")
 
             no_rag_box = st.empty()
@@ -289,7 +299,8 @@ if query_input.strip():
                             prompt=query_input,
                             system_message="You are a helpful assistant. Answer the user question directly based solely on your pre-trained knowledge.",
                             api_key=openai_key.strip(),
-                            model=openai_model
+                            model=openai_model,
+                            temperature=openai_temperature
                         )
                     no_rag_box.markdown(f"**Answer:**\n\n{no_rag_answer}")
                 except Exception as err:
@@ -318,7 +329,7 @@ if query_input.strip():
 
         # --- RIGHT COLUMN: OpenAI WITH RAG ---
         with col_rag:
-            st.markdown("#### ⚡ OpenAI Query (WITH ChromaDB RAG)")
+            st.markdown(f"#### ⚡ OpenAI Query (WITH ChromaDB RAG) [T={openai_temperature}]")
             st.caption(f"Prompt augmented with {len(valid_indices)} retrieved ChromaDB document(s).")
 
             rag_box = st.empty()
@@ -350,13 +361,13 @@ if query_input.strip():
                             prompt=rag_prompt,
                             system_message=system_msg,
                             api_key=openai_key.strip(),
-                            model=openai_model
+                            model=openai_model,
+                            temperature=openai_temperature
                         )
                     rag_box.markdown(f"**Answer:**\n\n{rag_answer}")
                 except Exception as err:
                     rag_box.error(f"OpenAI API Error: {err}")
             else:
-                # Simulated demonstration output when no API key is provided
                 top_doc_text = matched_docs[0] if matched_docs else "No context"
                 top_id_text = matched_ids[0] if matched_ids else "doc_1"
                 rag_box.success(
@@ -379,6 +390,117 @@ if query_input.strip():
                 """,
                 unsafe_allow_html=True
             )
+
+    # -------------------------------------------------------------
+    # FEATURE 2: Temperature Impact Lab (T=0.0 vs T=1.2)
+    # -------------------------------------------------------------
+    elif result_display_mode == "🌡️ Temperature Impact Lab: T=0.0 (Factual) vs. T=1.2 (Creative)":
+        st.write("Examine how **LLM Temperature ($T$)** alters response generation using the exact same ChromaDB vector context:")
+
+        # Build context string
+        valid_indices = passing_indices if rag_mode == "Strict" else list(range(len(matched_docs)))
+        rag_context = "\n".join([f"[{matched_ids[i]}]: {matched_docs[i]}" for i in valid_indices])
+
+        col_t0, col_t1 = st.columns(2)
+
+        # --- LEFT COLUMN: Low Temperature T=0.0 ---
+        with col_t0:
+            st.markdown("#### 🧊 Low Temperature: `T = 0.0` (Deterministic)")
+            st.caption("Greedy token selection: highest probability tokens chosen every time.")
+
+            t0_box = st.empty()
+
+            if openai_key.strip():
+                try:
+                    with st.spinner("Generating with T = 0.0..."):
+                        t0_answer = call_openai_api(
+                            prompt=f"Context from ChromaDB:\n{rag_context}\n\nQuestion: {query_input}",
+                            system_message="You are a factual assistant. Answer accurately based on the context. Cite sources [doc_X].",
+                            api_key=openai_key.strip(),
+                            model=openai_model,
+                            temperature=0.0
+                        )
+                    t0_box.markdown(f"**Answer (T=0.0):**\n\n{t0_answer}")
+                except Exception as err:
+                    t0_box.error(f"Error: {err}")
+            else:
+                top_text = matched_docs[0] if matched_docs else "Information"
+                t0_box.info(
+                    "**Demo Preview (T = 0.0 - Factual & Focused):**\n\n"
+                    f"\"Based on document `[doc_2]`, Venus has a thick carbon dioxide atmosphere with sulfuric acid clouds, "
+                    f"causing a runaway greenhouse effect with surface temperatures constant at 465°C.\" `[doc_2]`\n\n"
+                    "*(Characteristics: Minimalist, exact numerical recall, zero stylistic fluff, 100% reproducible across runs)*"
+                )
+
+            st.markdown(
+                """
+                <div style="background-color: #EFF6FF; border-left: 4px solid #3B82F6; padding: 10px; border-radius: 4px; font-size: 0.88rem; margin-top: 10px;">
+                    <b>🧊 When to use Low Temperature (T = 0.0 to 0.2):</b>
+                    <ul style="margin: 0; padding-left: 20px;">
+                        <li>Strict enterprise RAG & compliance</li>
+                        <li>Financial, medical, and legal queries</li>
+                        <li>Deterministic responses (identical output every run)</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        # --- RIGHT COLUMN: High Temperature T=1.2 ---
+        with col_t1:
+            st.markdown("#### 🔥 High Temperature: `T = 1.2` (Creative & Exploratory)")
+            st.caption("Flattened probability distribution: samples diverse and unexpected tokens.")
+
+            t1_box = st.empty()
+
+            if openai_key.strip():
+                try:
+                    with st.spinner("Generating with T = 1.2..."):
+                        t1_answer = call_openai_api(
+                            prompt=f"Context from ChromaDB:\n{rag_context}\n\nQuestion: {query_input}",
+                            system_message="You are an engaging and expressive assistant. Synthesize a vivid response using the ChromaDB context. Cite sources [doc_X].",
+                            api_key=openai_key.strip(),
+                            model=openai_model,
+                            temperature=1.2
+                        )
+                    t1_box.markdown(f"**Answer (T=1.2):**\n\n{t1_answer}")
+                except Exception as err:
+                    t1_box.error(f"Error: {err}")
+            else:
+                t1_box.success(
+                    "**Demo Preview (T = 1.2 - Creative & Narrative):**\n\n"
+                    "\"Imagine stepping out onto a scorched inferno cloaked in suffocating veil of carbon dioxide! "
+                    "According to `[doc_2]`, Venus is enveloped in corrosive sulfuric acid clouds that trap heat relentlessly, "
+                    "baking the planet at a blistering 465°C hot enough to liquefy lead!\" `[doc_2]`\n\n"
+                    "*(Characteristics: Colorful adjectives, metaphorical language, varied phrasing, but elevated risk of embellishing)*"
+                )
+
+            st.markdown(
+                """
+                <div style="background-color: #FFFBEB; border-left: 4px solid #F59E0B; padding: 10px; border-radius: 4px; font-size: 0.88rem; margin-top: 10px;">
+                    <b>🔥 When to use High Temperature (T = 0.8 to 1.2):</b>
+                    <ul style="margin: 0; padding-left: 20px;">
+                        <li>Brainstorming, creative writing, and storytelling</li>
+                        <li>Generating diverse analogies and educational metaphors</li>
+                        <li>Exploring varied conversational styles</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        # Educational Mathematical Card on Temperature
+        with st.expander("📐 How Temperature Works Mathematically in LLMs"):
+            st.markdown(r"""
+            In Large Language Models, the model produces a raw score (logit $z_i$) for each possible next word in its vocabulary.
+            These logits are converted into probabilities $P(w_i)$ using the **Softmax function scaled by Temperature ($T$)**:
+
+            $$P(w_i) = \frac{\exp(z_i / T)}{\sum_j \exp(z_j / T)}$$
+
+            - **When $T \to 0$ (Low Temperature)**: The division $z_i / T$ magnifies the differences between logits. The highest-scoring token gets nearly 100% of the probability weight (**greedy decoding**). The output becomes completely deterministic and repeatable.
+            - **When $T$ is High ($T > 1.0$)**: The division compresses the logits, flattening the probability distribution. Lower-probability words now have a realistic chance of being picked, resulting in creative, unexpected, and diverse vocabulary.
+            - **RAG Rule of Thumb**: For factual Question-Answering over databases, keep $T \le 0.2$ to minimize hallucinations.
+            """)
 
     # -------------------------------------------------------------
     # OTHER MODES (Local Synthesis, Evidence, Strict vs Flexible)

@@ -127,5 +127,44 @@ We decoupled server-side secrets from user inputs:
    - If no server key exists, users get an **empty** password input box (`value=""`).
    - Each visitor's input is isolated to their own individual browser session in Streamlit memory; other visitors cannot see or access what another user typed into their own session.
 
+---
+
+## 7. The Effect of Temperature in LLMs & RAG Systems
+
+### What Temperature Does
+In Large Language Models, temperature ($T$) controls the randomness and probability distribution when sampling the next word/token from the model's vocabulary logits ($z_i$):
+
+$$P(w_i) = \frac{\exp(z_i / T)}{\sum_j \exp(z_j / T)}$$
+
+### Comparison: Low vs. High Temperature
+
+| Dimension | 🧊 Low Temperature ($T = 0.0$ to $0.2$) | 🔥 High Temperature ($T = 0.8$ to $1.2+$) |
+| :--- | :--- | :--- |
+| **Sampling Mechanism** | **Greedy Decoding**: Picks the top-scoring token with near 100% probability. | **Stochastic Sampling**: Flattens probabilities; lower-ranked tokens get picked. |
+| **Output Style** | Concise, direct, literal, deterministic. | Creative, narrative, diverse vocabulary, expressive metaphors. |
+| **Repeatability** | **100% Deterministic**: Asking the same question produces the identical answer every time. | **Probabilistic**: Asking the same question produces varied phrasing every time. |
+| **Hallucination Risk** | **Near 0%** when grounded in RAG context. | **Elevated**: Model may embellish, speculate, or introduce unsupported claims. |
+| **Best Used For** | Enterprise RAG, legal, medical, coding, financial compliance. | Storytelling, brainstorming, generating analogies, marketing copy. |
+
+### Practical Example: Querying Venus Atmosphere with ChromaDB RAG
+
+- **Query**: *"Describe the hostile atmosphere on Venus."*
+- **Vector Evidence in ChromaDB `[doc_2]`**: *"Venus has a thick runaway greenhouse atmosphere of carbon dioxide and sulfuric acid, reaching 465°C."*
+
+1. **At Low Temperature ($T = 0.0$)**:
+   > *"Based on document `[doc_2]`, Venus has a thick runaway greenhouse atmosphere composed of carbon dioxide with clouds of sulfuric acid. Its surface temperature is approximately 465°C."*
+   >
+   > *(Observation: Strict, factual, zero filler, repeatable).*
+
+2. **At High Temperature ($T = 1.2$)**:
+   > *"Picture a hellish, suffocating landscape cloaked in a dense, poisonous shroud of carbon dioxide. According to `[doc_2]`, torrents of caustic sulfuric acid clouds lock in blistering heat, cooking the barren terrain at an unimaginable 465°C—a furnace intense enough to liquefy solid lead!"*
+   >
+   > *(Observation: Vivid, engaging, but introduces figurative embellishments like 'liquefy solid lead' that were not in the source text).*
+
+### How It Is Implemented in the Application
+1. **Interactive Temperature Slider**: Configurable from $0.0$ to $1.5$ in the sidebar.
+2. **Dedicated Mode**: **`🌡️ Temperature Impact Lab: T=0.0 (Factual) vs. T=1.2 (Creative)`** executes the query at both extremes simultaneously and displays the outputs side-by-side.
+
+
 
 
