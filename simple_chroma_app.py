@@ -113,14 +113,32 @@ with st.sidebar:
 
     st.divider()
     st.subheader("3. OpenAI Configuration")
-    # Read key from secrets or env var if available
-    default_key = ""
+    
+    # Check if key is configured securely on the server (Streamlit Secrets or Environment Variable)
+    server_key = ""
     try:
-        default_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
+        server_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
     except Exception:
-        default_key = os.getenv("OPENAI_API_KEY", "")
+        server_key = os.getenv("OPENAI_API_KEY", "")
 
-    openai_key = st.text_input("OpenAI API Key:", value=default_key, type="password", placeholder="sk-proj-...")
+    if server_key:
+        # Secure: Key is kept on the server. Never expose or pre-fill it into the client-side text input!
+        openai_key = server_key
+        st.success("🔒 **API Key: Secured on Server**")
+        st.caption("Loaded from server secrets / environment variable. Hidden from browser visitors.")
+    else:
+        # Fallback: Optional Bring-Your-Own-Key (never pre-filled with any server data)
+        user_entered_key = st.text_input(
+            "OpenAI API Key (Optional):",
+            value="",
+            type="password",
+            placeholder="sk-proj-...",
+            help="For public deployments, add OPENAI_API_KEY to your Streamlit Cloud Secrets dashboard so visitors do not need to enter one."
+        )
+        openai_key = user_entered_key.strip()
+        if not openai_key:
+            st.info("💡 No key set. A simulated comparison is displayed until a key is added.")
+
     openai_model = st.selectbox("OpenAI Model:", options=["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"], index=0)
 
     st.divider()

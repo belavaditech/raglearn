@@ -105,4 +105,27 @@ The application features a direct comparison mode between standard LLM queries a
 
 In `simple_chroma_demo.py`, selecting option `1` (Query Vector Database) runs the query and offers an automated OpenAI comparison view when `OPENAI_API_KEY` is present.
 
+---
+
+## 6. OpenAI API Key Security & Best Practices in Streamlit
+
+### Why Pre-Filling an API Key into a Text Input is Dangerous
+If you have an API key stored on your server (e.g., in `st.secrets` or environment variables) and write:
+```python
+# ❌ INSECURE: Do NOT pre-fill server secrets into client inputs!
+st.text_input("OpenAI Key:", value=st.secrets["OPENAI_API_KEY"], type="password")
+```
+Even though the password field masks the characters on the screen (`••••••••`), the actual plain text secret is sent to the visitor's browser DOM. Any visitor can right-click the input box, select **Inspect Element**, and view your secret API key!
+
+### The Secure Solution Implemented in `simple_chroma_app.py`
+We decoupled server-side secrets from user inputs:
+1. **Server Secret (Streamlit Cloud Secrets / Env Var)**:
+   - When `OPENAI_API_KEY` is found in `st.secrets` or environment variables, the key is used **strictly in server memory**.
+   - The client-side text box is **hidden**, and a secure badge is shown:
+     `🔒 API Key: Secured on Server (Hidden from browser visitors)`
+2. **User Input Fallback (Bring Your Own Key - BYOK)**:
+   - If no server key exists, users get an **empty** password input box (`value=""`).
+   - Each visitor's input is isolated to their own individual browser session in Streamlit memory; other visitors cannot see or access what another user typed into their own session.
+
+
 
