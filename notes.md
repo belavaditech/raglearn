@@ -75,7 +75,34 @@ client = chromadb.HttpClient(
 
 ---
 
-## Summary
+## 5. OpenAI Query: With RAG vs. Without RAG Comparison
 
-For **demos, tests, and interactive user queries**, the current in-memory setup on Streamlit Cloud is ideal because it is **fast, completely free, requires zero credentials, and automatically self-resets to a clean state**.
+The application features a direct comparison mode between standard LLM queries and Vector RAG queries:
+
+### ⚖️ Comparison Table
+
+| Dimension | 🤖 OpenAI Query (WITHOUT RAG) | ⚡ OpenAI Query (WITH ChromaDB RAG) |
+| :--- | :--- | :--- |
+| **Prompt Structure** | Sent directly to OpenAI: `"Question: {query}"` | Augmented with retrieved vectors: `"Context from ChromaDB:\n{context}\n\nQuestion: {query}"` |
+| **Knowledge Source** | Generic pre-training weights only. | Custom, verified vector facts stored in ChromaDB. |
+| **Custom / Private Data** | **Fails / Hallucinates**: Cannot know private company policies, newly added notes, or domain data in ChromaDB. | **Grounded & Factual**: Directly answers from the nearest matched documents in ChromaDB. |
+| **Citations** | None. | Explicit verifiable citations (e.g. `[doc_3]`, `[doc_1]`). |
+| **Strict Mode Handling** | Answers regardless of knowledge accuracy. | **Strictly rejects** if the query is out-of-domain or below the distance cutoff. |
+
+### 🖥️ Implementation in the Streamlit Web Application
+
+1. **Sidebar Configuration**:
+   - Provide an `OPENAI_API_KEY` in the sidebar (or reads automatically from `st.secrets` or environment variable).
+   - Select the target OpenAI model: `gpt-4o-mini`, `gpt-4o`, or `gpt-3.5-turbo`.
+2. **Display Mode**:
+   - Select **`⚖️ OpenAI Compare: With RAG vs. Without RAG`** from the Display Mode dropdown.
+3. **Split-Column Interface**:
+   - **Left Column**: Displays the raw, unaugmented OpenAI response highlighting limitations on custom knowledge.
+   - **Right Column**: Displays the ChromaDB vector-grounded response with document citations `[doc_X]`, distance metrics, and strict threshold enforcement.
+   - **Demo Preview**: If no API key is provided, an interactive simulation is displayed explaining the exact contrast without failing.
+
+### 💻 Implementation in the Terminal CLI
+
+In `simple_chroma_demo.py`, selecting option `1` (Query Vector Database) runs the query and offers an automated OpenAI comparison view when `OPENAI_API_KEY` is present.
+
 

@@ -39,7 +39,10 @@ This demo is designed around core vector database and NLP concepts documented in
    - **Flexible Mode**: Relaxes cutoff constraints, retrieving nearest semantic neighbors and synthesizing a broader summary.
 
 5. **Option to Display Result Based on Vector Data Found**:
-   - **Synthesized Answer**: Formulates an answer directly grounded on the retrieved vector chunks.
+   - **⚖️ OpenAI Comparison (With RAG vs. Without RAG)**: Live side-by-side comparison executing the query against OpenAI:
+     - **Without RAG**: Evaluates the query using standard LLM pre-training weights only.
+     - **With ChromaDB RAG**: Augments the prompt with retrieved vector evidence, strictly grounding the answer and citing document IDs (`[doc_X]`).
+   - **Synthesized Answer (Local)**: Formulates an answer directly grounded on the retrieved vector chunks without needing external APIs.
    - **Direct Matched Document Evidence**: Verbatim display of the exact matched document cards.
    - **Side-by-Side Comparison**: Live split view showing how Strict vs. Flexible modes process the same query.
 

@@ -1,21 +1,22 @@
 """
-Simple ChromaDB Interactive RAG Application
-Built with Streamlit & ChromaDB
+Simple ChromaDB Interactive RAG Application with OpenAI Comparison
+Built with Streamlit, ChromaDB & OpenAI
 Reference: https://www.geeksforgeeks.org/nlp/introduction-to-chromadb/
 """
 
+import os
 import streamlit as st
 import pandas as pd
 
 # Page Configuration
 st.set_page_config(
-    page_title="Simple ChromaDB RAG Demo",
+    page_title="Simple ChromaDB RAG Demo | With vs Without RAG",
     page_icon="⚡",
     layout="wide"
 )
 
 st.title("⚡ Simple ChromaDB RAG Demo")
-st.caption("A clean, simple implementation of Vector Database RAG using **ChromaDB** based on the [GeeksforGeeks Guide](https://www.geeksforgeeks.org/nlp/introduction-to-chromadb/).")
+st.caption("A clean implementation of Vector Database RAG using **ChromaDB** based on the [GeeksforGeeks Guide](https://www.geeksforgeeks.org/nlp/introduction-to-chromadb/), with **OpenAI With-RAG vs. Without-RAG** comparison.")
 
 # Initialize ChromaDB Client & Collection in Session State
 @st.cache_resource
@@ -50,6 +51,23 @@ except Exception as e:
     st.stop()
 
 
+# Helper function to call OpenAI
+def call_openai_api(prompt: str, system_message: str = "", api_key: str = "", model: str = "gpt-4o-mini") -> str:
+    from openai import OpenAI
+    client = OpenAI(api_key=api_key)
+    messages = []
+    if system_message:
+        messages.append({"role": "system", "content": system_message})
+    messages.append({"role": "user", "content": prompt})
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=0.2
+    )
+    return response.choices[0].message.content
+
+
 # Sidebar Controls
 with st.sidebar:
     st.header("⚙️ RAG Options & Settings")
@@ -74,22 +92,36 @@ with st.sidebar:
     n_results = st.slider("Number of Vector Matches (n_results):", min_value=1, max_value=5, value=2)
 
     st.divider()
-    st.subheader("2. Display Options")
+    st.subheader("2. Result Presentation")
+    result_display_mode = st.selectbox(
+        "Display Mode:",
+        options=[
+            "⚖️ OpenAI Compare: With RAG vs. Without RAG",
+            "Synthesized Answer Grounded on Vector Data (Local)",
+            "Direct Matched Document Evidence",
+            "Compare Side-by-Side (Strict vs Flexible)"
+        ],
+        index=0,
+        help="Choose 'OpenAI Compare' to see how the same query is answered by OpenAI with and without vector data retrieved from ChromaDB."
+    )
+
     show_vector_outputs = st.checkbox(
         "🔍 Display Vector Query Outputs (Distances & Chunks)",
         value=True,
         help="Display the raw outputs returned by collection.query(): distances, IDs, and document texts."
     )
 
-    result_display_mode = st.selectbox(
-        "📋 Result Presentation:",
-        options=[
-            "Synthesized Answer Grounded on Vector Data",
-            "Direct Matched Document Evidence",
-            "Compare Side-by-Side (Strict vs Flexible)"
-        ],
-        index=0
-    )
+    st.divider()
+    st.subheader("3. OpenAI Configuration")
+    # Read key from secrets or env var if available
+    default_key = ""
+    try:
+        default_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
+    except Exception:
+        default_key = os.getenv("OPENAI_API_KEY", "")
+
+    openai_key = st.text_input("OpenAI API Key:", value=default_key, type="password", placeholder="sk-proj-...")
+    openai_model = st.selectbox("OpenAI Model:", options=["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"], index=0)
 
     st.divider()
     if st.button("🗑️ Reset Collection to Sample Data", use_container_width=True):
@@ -114,10 +146,10 @@ st.markdown("---")
 
 # Section 1: Data Entry into ChromaDB
 with st.expander("📥 Step 1: Enter New Data into ChromaDB", expanded=False):
-    st.write("Add your own text documents into the ChromaDB vector database:")
+    st.write("Add your own custom documents into the ChromaDB vector database:")
     col_in1, col_in2 = st.columns([3, 1])
     with col_in1:
-        new_doc_text = st.text_area("Document Content:", placeholder="Type or paste information to add into ChromaDB...")
+        new_doc_text = st.text_area("Document Content:", placeholder="Type or paste custom knowledge (e.g. Project ApolloX launch date is Nov 24, 2026)...")
     with col_in2:
         new_doc_id = st.text_input("Document ID:", value=f"doc_{doc_count + 1}")
         category_tag = st.text_input("Category Tag:", value="general")
@@ -200,25 +232,145 @@ if query_input.strip():
 
         st.dataframe(pd.DataFrame(vector_rows), use_container_width=True)
 
-        # Raw JSON output expander (direct view of ChromaDB dictionary)
+        # Raw JSON output expander
         with st.expander("🛠️ Inspect Raw ChromaDB Output Dictionary (`results`)"):
             st.json(query_results)
 
     st.markdown("---")
 
-    # OPTION: Display Result Based on Vector Data Found
-    st.markdown("### 🎯 Result Based on Vector Data Found")
-
     # Filter passing documents for Strict Mode
     passing_indices = [i for i, d in enumerate(matched_distances) if d <= max_distance_cutoff]
     has_strict_pass = len(passing_indices) > 0
 
-    if result_display_mode == "Synthesized Answer Grounded on Vector Data":
+    # OPTION: Display Result Based on Vector Data Found
+    st.markdown("### 🎯 Result Based on Vector Data Found")
+
+    # -------------------------------------------------------------
+    # FEATURE: OpenAI Comparison (With RAG vs Without RAG)
+    # -------------------------------------------------------------
+    if result_display_mode == "⚖️ OpenAI Compare: With RAG vs. Without RAG":
+        st.write("Compare the exact same query evaluated by **OpenAI Without RAG** vs. **OpenAI With ChromaDB RAG**:")
+
+        # Build context string from vector search
+        valid_indices = passing_indices if rag_mode == "Strict" else list(range(len(matched_docs)))
+        rag_context = "\n".join([f"[{matched_ids[i]}]: {matched_docs[i]}" for i in valid_indices])
+
+        col_no_rag, col_rag = st.columns(2)
+
+        # --- LEFT COLUMN: OpenAI WITHOUT RAG ---
+        with col_no_rag:
+            st.markdown("#### 🤖 OpenAI Query (WITHOUT RAG)")
+            st.caption("Prompt sent directly to OpenAI with zero vector context.")
+
+            no_rag_box = st.empty()
+
+            if openai_key.strip():
+                try:
+                    with st.spinner("Calling OpenAI (Without RAG)..."):
+                        no_rag_answer = call_openai_api(
+                            prompt=query_input,
+                            system_message="You are a helpful assistant. Answer the user question directly based solely on your pre-trained knowledge.",
+                            api_key=openai_key.strip(),
+                            model=openai_model
+                        )
+                    no_rag_box.markdown(f"**Answer:**\n\n{no_rag_answer}")
+                except Exception as err:
+                    no_rag_box.error(f"OpenAI API Error: {err}")
+            else:
+                no_rag_box.warning(
+                    "🔑 **No OpenAI API Key Entered in Sidebar**\n\n"
+                    "*Demo Preview (Without RAG):*\n"
+                    f"> The base model relies **only** on its public training data. If your query asks about custom private documents "
+                    f"added to ChromaDB, the model will say: *'I do not have access to your private database or current real-time documents.'*"
+                )
+
+            st.markdown(
+                """
+                <div style="background-color: #FEF2F2; border-left: 4px solid #EF4444; padding: 10px; border-radius: 4px; font-size: 0.88rem; margin-top: 10px;">
+                    <b>⚠️ Without RAG Limitations:</b>
+                    <ul style="margin: 0; padding-left: 20px;">
+                        <li>Has no access to documents in ChromaDB</li>
+                        <li>Susceptible to hallucinations on custom data</li>
+                        <li>Cannot provide verifiable document citations</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        # --- RIGHT COLUMN: OpenAI WITH RAG ---
+        with col_rag:
+            st.markdown("#### ⚡ OpenAI Query (WITH ChromaDB RAG)")
+            st.caption(f"Prompt augmented with {len(valid_indices)} retrieved ChromaDB document(s).")
+
+            rag_box = st.empty()
+
+            if rag_mode == "Strict" and not has_strict_pass:
+                rag_box.error(
+                    f"⛔ **Strict Grounding Rejection:**\n\n"
+                    f"ChromaDB nearest match distance (`{matched_distances[0]:.4f}`) exceeded strict threshold (`{max_distance_cutoff}`).\n"
+                    f"In Strict Mode, the system refuses to send ungrounded context to OpenAI."
+                )
+            elif openai_key.strip():
+                try:
+                    if rag_mode == "Strict":
+                        system_msg = (
+                            "You are a strict, factual assistant. Answer the question ONLY using the facts explicitly stated in the provided context.\n"
+                            "Cite your sources using [doc_X]. If the context does not contain sufficient facts to answer, "
+                            "reply: 'I cannot answer this question based on the provided ChromaDB documents.'"
+                        )
+                    else:
+                        system_msg = (
+                            "You are a helpful assistant. Use the provided context from ChromaDB as your primary source of truth.\n"
+                            "Synthesize a clear, helpful response and cite sources [doc_X]."
+                        )
+
+                    rag_prompt = f"Context from ChromaDB:\n{rag_context}\n\nQuestion: {query_input}"
+
+                    with st.spinner("Calling OpenAI (With ChromaDB RAG)..."):
+                        rag_answer = call_openai_api(
+                            prompt=rag_prompt,
+                            system_message=system_msg,
+                            api_key=openai_key.strip(),
+                            model=openai_model
+                        )
+                    rag_box.markdown(f"**Answer:**\n\n{rag_answer}")
+                except Exception as err:
+                    rag_box.error(f"OpenAI API Error: {err}")
+            else:
+                # Simulated demonstration output when no API key is provided
+                top_doc_text = matched_docs[0] if matched_docs else "No context"
+                top_id_text = matched_ids[0] if matched_ids else "doc_1"
+                rag_box.success(
+                    f"🛡️ **Grounded Answer (With ChromaDB Context `[{top_id_text}]`):**\n\n"
+                    f"Based on the vector match retrieved from ChromaDB (Distance: {matched_distances[0]:.4f}):\n\n"
+                    f"> *\"{top_doc_text}\"* `[{top_id_text}]`\n\n"
+                    f"*(Enter your `OPENAI_API_KEY` in the sidebar to run live generation via `{openai_model}`).*"
+                )
+
+            st.markdown(
+                """
+                <div style="background-color: #ECFDF5; border-left: 4px solid #10B981; padding: 10px; border-radius: 4px; font-size: 0.88rem; margin-top: 10px;">
+                    <b>✅ With RAG Advantages:</b>
+                    <ul style="margin: 0; padding-left: 20px;">
+                        <li>Directly grounded in ChromaDB vector facts</li>
+                        <li>Verifiable citations linked to specific document IDs</li>
+                        <li>Strict mode eliminates hallucination on unknown topics</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+    # -------------------------------------------------------------
+    # OTHER MODES (Local Synthesis, Evidence, Strict vs Flexible)
+    # -------------------------------------------------------------
+    elif result_display_mode == "Synthesized Answer Grounded on Vector Data (Local)":
         if rag_mode == "Strict":
             if not has_strict_pass:
                 st.error(
                     f"⛔ **Strict Grounding Rejection:**\n\n"
-                    f"No document in ChromaDB met the strict distance threshold (required distance $\le {max_distance_cutoff}$).\n\n"
+                    f"No document in ChromaDB met the strict distance threshold (required distance <= {max_distance_cutoff}).\n\n"
                     f"The nearest match had distance `{matched_distances[0]:.4f}`.\n"
                     f"In Strict Mode, the system refuses to speculate or generate an ungrounded answer."
                 )
@@ -271,4 +423,3 @@ if query_input.strip():
 
 else:
     st.info("Enter a query above or click one of the example questions to see ChromaDB in action.")
-
